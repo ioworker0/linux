@@ -1287,6 +1287,7 @@ unlock:
 
 vm_fault_t do_huge_pmd_wp_page(struct vm_fault *vmf)
 {
+	const bool unshare = vmf->flags & FAULT_FLAG_UNSHARE;
 	struct vm_area_struct *vma = vmf->vma;
 	struct page *page;
 	unsigned long haddr = vmf->address & HPAGE_PMD_MASK;
@@ -1294,6 +1295,9 @@ vm_fault_t do_huge_pmd_wp_page(struct vm_fault *vmf)
 
 	vmf->ptl = pmd_lockptr(vma->vm_mm, vmf->pmd);
 	VM_BUG_ON_VMA(!vma->anon_vma, vma);
+
+	VM_BUG_ON(unshare && (vmf->flags & FAULT_FLAG_WRITE));
+	VM_BUG_ON(!unshare && !(vmf->flags & FAULT_FLAG_WRITE));
 
 	if (is_huge_zero_pmd(orig_pmd))
 		goto fallback;
@@ -1342,6 +1346,10 @@ vm_fault_t do_huge_pmd_wp_page(struct vm_fault *vmf)
 		page_move_anon_rmap(page, vma);
 		unlock_page(page);
 reuse:
+		if (unlikely(unshare)) {
+			spin_unlock(vmf->ptl);
+			return 0;
+		}
 		entry = pmd_mkyoung(orig_pmd);
 		entry = maybe_pmd_mkwrite(pmd_mkdirty(entry), vma);
 		if (pmdp_set_access_flags(vma, haddr, vmf->pmd, entry, 1))
