@@ -1800,7 +1800,11 @@ static bool try_to_migrate_one(struct page *page, struct vm_area_struct *vma,
 			VM_BUG_ON_PAGE(PageHuge(page) ||
 				       !PageTransCompound(page), page);
 
-			set_pmd_migration_entry(&pvmw, page);
+			if (set_pmd_migration_entry(&pvmw, page)) {
+				ret = false;
+				page_vma_mapped_walk_done(&pvmw);
+				break;
+			}
 			continue;
 		}
 #endif
