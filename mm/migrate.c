@@ -187,6 +187,8 @@ static bool remove_migration_pte(struct page *page, struct vm_area_struct *vma,
 
 	VM_BUG_ON_PAGE(PageTail(page), page);
 	while (page_vma_mapped_walk(&pvmw)) {
+		rmap_t rmap_flags = RMAP_NONE;
+
 		if (PageKsm(page))
 			new = page;
 		else
@@ -216,6 +218,9 @@ static bool remove_migration_pte(struct page *page, struct vm_area_struct *vma,
 		else if (pte_swp_uffd_wp(*pvmw.pte))
 			pte = pte_mkuffd_wp(pte);
 
+		if (PageAnon(new) && !is_readable_migration_entry(entry))
+			rmap_flags |= RMAP_EXCLUSIVE;
+
 		if (unlikely(is_device_private_page(new))) {
 			if (pte_write(pte))
 				entry = make_writable_device_private_entry(
@@ -238,7 +243,7 @@ static bool remove_migration_pte(struct page *page, struct vm_area_struct *vma,
 			pte = arch_make_huge_pte(pte, shift, vma->vm_flags);
 			if (PageAnon(new))
 				hugepage_add_anon_rmap(new, vma, pvmw.address,
-						       RMAP_NONE);
+						       rmap_flags);
 			else
 				page_dup_file_rmap(new, true);
 			set_huge_pte_at(vma->vm_mm, pvmw.address, pvmw.pte, pte);
@@ -246,7 +251,7 @@ static bool remove_migration_pte(struct page *page, struct vm_area_struct *vma,
 #endif
 		{
 			if (PageAnon(new))
-				page_add_anon_rmap(new, vma, pvmw.address, RMAP_NONE);
+				page_add_anon_rmap(new, vma, pvmw.address, rmap_flags);
 			else
 				page_add_file_rmap(new, false);
 			set_pte_at(vma->vm_mm, pvmw.address, pvmw.pte, pte);
@@ -563,6 +568,12 @@ void migrate_page_states(struct page *newpage, struct page *page)
 		SetPageWorkingset(newpage);
 	if (PageChecked(page))
 		SetPageChecked(newpage);
+	/*
+	 * PG_anon_exclusive (-> PG_mappedtodisk) is always migrated via
+	 * migration entries. We can still have PG_anon_exclusive set on an
+	 * effectively unmapped and unreferenced first sub-pages of an
+	 * anonymous THP: we can simply copy it here via PG_mappedtodisk.
+	 */
 	if (PageMappedToDisk(page))
 		SetPageMappedToDisk(newpage);
 
@@ -2393,14 +2404,34 @@ again:
 		 * set up a special migration page table entry now.
 		 */
 		if (trylock_page(page)) {
+			bool anon_exclusive;
 			pte_t swp_pte;
 
+			anon_exclusive = PageAnon(page) && PageAnonExclusive(page);
+			if (anon_exclusive) {
+				flush_cache_page(vma, addr, pte_pfn(*ptep));
+				ptep_clear_flush(vma, addr, ptep);
+
+				if (page_try_share_anon_rmap(page)) {
+					set_pte_at(mm, addr, ptep, pte);
+					unlock_page(page);
+					put_page(page);
+					migrate->cpages--;
+					mpfn = 0;
+					goto next;
+				}
+			} else {
+				ptep_get_and_clear(mm, addr, ptep);
+			}
+
 			mpfn |= MIGRATE_PFN_LOCKED;
-			ptep_get_and_clear(mm, addr, ptep);
 
 			/* Setup special migration page table entry */
 			if (mpfn & MIGRATE_PFN_WRITE)
 				entry = make_writable_migration_entry(
+							page_to_pfn(page));
+			else if (anon_exclusive)
+				entry = make_readable_exclusive_migration_entry(
 							page_to_pfn(page));
 			else
 				entry = make_readable_migration_entry(
