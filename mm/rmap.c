@@ -1812,7 +1812,22 @@ static bool try_to_migrate_one(struct page *page, struct vm_area_struct *vma,
 		/* Unexpected PMD-mapped THP? */
 		VM_BUG_ON_PAGE(!pvmw.pte, page);
 
-		subpage = page - page_to_pfn(page) + pte_pfn(*pvmw.pte);
+		if (is_zone_device_page(page)) {
+			/*
+			 * Our PTE is a non-present device exclusive entry and
+			 * calculating the subpage as for the common case would
+			 * result in an invalid pointer.
+			 *
+			 * Since only PAGE_SIZE pages can currently be
+			 * migrated, just set it to page. This will need to be
+			 * changed when hugepage migrations to device private
+			 * memory are supported.
+			 */
+			VM_BUG_ON_PAGE(PageCompound(page), page);
+			subpage = page;
+		} else {
+			subpage = page - page_to_pfn(page) + pte_pfn(*pvmw.pte);
+		}
 		address = pvmw.address;
 		anon_exclusive = PageAnon(page) &&
 				 PageAnonExclusive(subpage);
@@ -1895,15 +1910,7 @@ static bool try_to_migrate_one(struct page *page, struct vm_area_struct *vma,
 			/*
 			 * No need to invalidate here it will synchronize on
 			 * against the special swap migration pte.
-			 *
-			 * The assignment to subpage above was computed from a
-			 * swap PTE which results in an invalid pointer.
-			 * Since only PAGE_SIZE pages can currently be
-			 * migrated, just set it to page. This will need to be
-			 * changed when hugepage migrations to device private
-			 * memory are supported.
 			 */
-			subpage = page;
 		} else if (PageHWPoison(page)) {
 			pteval = swp_entry_to_pte(make_hwpoison_entry(subpage));
 			if (PageHuge(page)) {
