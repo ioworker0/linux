@@ -2991,7 +2991,7 @@ static inline void wp_page_reuse(struct vm_fault *vmf)
 	struct page *page = vmf->page;
 	pte_t entry;
 
-	VM_BUG_ON(PageAnon(page) && !PageAnonExclusive(page));
+	VM_BUG_ON(page && PageAnon(page) && !PageAnonExclusive(page));
 
 	/*
 	 * Clear the pages cpupid information as the existing
