@@ -161,6 +161,13 @@ __maybe_unused struct page *try_grab_compound_head(struct page *page,
 			hpage_pincount_add(page, refs);
 		else
 			page_ref_add(page, refs * (GUP_PIN_COUNTING_BIAS - 1));
+		/*
+		 * Adjust the pincount before re-checking the PTE for changes.
+		 * This is essentially a smp_mb() and is paired with a memory
+		 * barrier in page_try_share_anon_rmap().
+		 */
+		smp_mb__after_atomic();
+
 
 		mod_node_page_state(page_pgdat(page), NR_FOLL_PIN_ACQUIRED,
 				    refs);

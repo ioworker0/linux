@@ -1505,12 +1505,9 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 			tlb_finish_mmu(&tlb);
 		}
 
-		/*
-		 * Nuke the page table entry. When having to clear
-		 * PageAnonExclusive(), we always have to flush.
-		 */
+		/* Nuke the page table entry. */
 		flush_cache_page(vma, address, pte_pfn(*pvmw.pte));
-		if (should_defer_flush(mm, flags) && !anon_exclusive) {
+		if (should_defer_flush(mm, flags)) {
 			/*
 			 * We clear the PTE but do not flush so potentially
 			 * a remote CPU could still be writing to the page.
@@ -1633,6 +1630,8 @@ static bool try_to_unmap_one(struct page *page, struct vm_area_struct *vma,
 				page_vma_mapped_walk_done(&pvmw);
 				break;
 			}
+
+			/* See page_try_share_anon_rmap(): clear PTE first. */
 			if (anon_exclusive &&
 			    page_try_share_anon_rmap(subpage)) {
 				swap_free(entry);
@@ -1950,6 +1949,8 @@ static bool try_to_migrate_one(struct page *page, struct vm_area_struct *vma,
 			}
 			VM_BUG_ON_PAGE(pte_write(pteval) && PageAnon(page) &&
 				       !anon_exclusive, subpage);
+
+			/* See page_try_share_anon_rmap(): clear PTE first. */
 			if (anon_exclusive &&
 			    page_try_share_anon_rmap(subpage)) {
 				set_pte_at(mm, address, pvmw.pte, pteval);
