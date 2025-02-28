@@ -98,30 +98,52 @@ static struct notifier_block panic_block = {
 static void debug_show_blocker(struct task_struct *task)
 {
 	struct task_struct *g, *t;
-	unsigned long owner;
-	struct mutex *lock;
+	unsigned long owner, holder;
+	struct semaphore *sem_lock;
+	struct mutex *mutex_lock;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "No rcu lock held");
 
-	lock = READ_ONCE(task->blocker_mutex);
-	if (!lock)
-		return;
+	mutex_lock = READ_ONCE(task->blocker_mutex);
+	if (mutex_lock) {
+		owner = mutex_get_owner(mutex_lock);
+		if (unlikely(!owner)) {
+			pr_err("INFO: task %s:%d is blocked on a mutex, but the owner is not found.\n",
+			       task->comm, task->pid);
+			goto blocker_sem;
+		}
 
-	owner = mutex_get_owner(lock);
-	if (unlikely(!owner)) {
-		pr_err("INFO: task %s:%d is blocked on a mutex, but the owner is not found.\n",
-			task->comm, task->pid);
+		/* Ensure the owner information is correct. */
+		for_each_process_thread(g, t) {
+			if ((unsigned long)t == owner) {
+				pr_err("INFO: task %s:%d is blocked on a mutex likely owned by task %s:%d.\n",
+				       task->comm, task->pid, t->comm, t->pid);
+				sched_show_task(t);
+				return;
+			}
+		}
 		return;
 	}
 
-	/* Ensure the owner information is correct. */
-	for_each_process_thread(g, t) {
-		if ((unsigned long)t == owner) {
-			pr_err("INFO: task %s:%d is blocked on a mutex likely owned by task %s:%d.\n",
-				task->comm, task->pid, t->comm, t->pid);
-			sched_show_task(t);
+blocker_sem:
+	sem_lock = READ_ONCE(task->blocker_sem);
+	if (sem_lock) {
+		holder = sem_last_holder(sem_lock);
+		if (unlikely(!holder)) {
+			pr_err("INFO: task %s:%d is blocked on a semaphore, but the last holder is not found.\n",
+			       task->comm, task->pid);
 			return;
 		}
+
+		for_each_process_thread(g, t) {
+			if ((unsigned long)t == holder) {
+				pr_err("INFO: task %s:%d blocked on a semaphore likely last held by task %s:%d\n",
+				       task->comm, task->pid, t->comm, t->pid);
+				sched_show_task(t);
+				return;
+			}
+		}
+		return;
 	}
 }
 #else

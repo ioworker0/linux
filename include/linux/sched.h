@@ -1219,6 +1219,7 @@ struct task_struct {
 
 #ifdef CONFIG_DETECT_HUNG_TASK_BLOCKER
 	struct mutex			*blocker_mutex;
+	struct semaphore		*blocker_sem;
 #endif
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP

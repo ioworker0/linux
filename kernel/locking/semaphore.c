@@ -39,6 +39,7 @@ static noinline int __down_interruptible(struct semaphore *sem);
 static noinline int __down_killable(struct semaphore *sem);
 static noinline int __down_timeout(struct semaphore *sem, long timeout);
 static noinline void __up(struct semaphore *sem);
+static inline void __sem_acquire(struct semaphore *sem);
 
 /**
  * down - acquire the semaphore
@@ -58,7 +59,7 @@ void __sched down(struct semaphore *sem)
 	might_sleep();
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
-		sem->count--;
+		__sem_acquire(sem);
 	else
 		__down(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
@@ -82,7 +83,7 @@ int __sched down_interruptible(struct semaphore *sem)
 	might_sleep();
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
-		sem->count--;
+		__sem_acquire(sem);
 	else
 		result = __down_interruptible(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
@@ -109,7 +110,7 @@ int __sched down_killable(struct semaphore *sem)
 	might_sleep();
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
-		sem->count--;
+		__sem_acquire(sem);
 	else
 		result = __down_killable(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
@@ -139,7 +140,7 @@ int __sched down_trylock(struct semaphore *sem)
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	count = sem->count - 1;
 	if (likely(count >= 0))
-		sem->count = count;
+		__sem_acquire(sem);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
 
 	return (count < 0);
@@ -164,7 +165,7 @@ int __sched down_timeout(struct semaphore *sem, long timeout)
 	might_sleep();
 	raw_spin_lock_irqsave(&sem->lock, flags);
 	if (likely(sem->count > 0))
-		sem->count--;
+		__sem_acquire(sem);
 	else
 		result = __down_timeout(sem, timeout);
 	raw_spin_unlock_irqrestore(&sem->lock, flags);
@@ -242,9 +243,17 @@ static inline int __sched __down_common(struct semaphore *sem, long state,
 {
 	int ret;
 
+#ifdef CONFIG_DETECT_HUNG_TASK_BLOCKER
+	WRITE_ONCE(current->blocker_sem, sem);
+#endif
+
 	trace_contention_begin(sem, 0);
 	ret = ___down_common(sem, state, timeout);
 	trace_contention_end(sem, ret);
+
+#ifdef CONFIG_DETECT_HUNG_TASK_BLOCKER
+	WRITE_ONCE(current->blocker_sem, NULL);
+#endif
 
 	return ret;
 }
@@ -271,9 +280,44 @@ static noinline int __sched __down_timeout(struct semaphore *sem, long timeout)
 
 static noinline void __sched __up(struct semaphore *sem)
 {
+#ifdef CONFIG_DETECT_HUNG_TASK_BLOCKER
+	unsigned long curr = (unsigned long)current;
+#endif
+
 	struct semaphore_waiter *waiter = list_first_entry(&sem->wait_list,
 						struct semaphore_waiter, list);
 	list_del(&waiter->list);
 	waiter->up = true;
 	wake_up_process(waiter->task);
+
+#ifdef CONFIG_DETECT_HUNG_TASK_BLOCKER
+	atomic_long_cmpxchg_release(&sem->last_holder, curr, 0UL);
+#endif
+}
+
+static inline struct task_struct *__holder_task(unsigned long holder)
+{
+	return (struct task_struct *)holder;
+}
+
+#ifdef CONFIG_DETECT_HUNG_TASK_BLOCKER
+/* Do not use the return value as a pointer directly. */
+unsigned long sem_last_holder(struct semaphore *sem)
+{
+	unsigned long holder = atomic_long_read(&sem->last_holder);
+	return (unsigned long)__holder_task(holder);
+}
+#else
+unsigned long sem_last_holder(struct semaphore *sem)
+{
+	return 0;
+}
+#endif
+
+static inline void __sem_acquire(struct semaphore *sem)
+{
+	sem->count--;
+#ifdef CONFIG_DETECT_HUNG_TASK_BLOCKER
+	atomic_long_set(&sem->last_holder, (unsigned long)current);
+#endif
 }
