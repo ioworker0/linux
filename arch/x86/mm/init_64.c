@@ -844,6 +844,17 @@ void __init paging_init(void)
  */
 static unsigned long unused_pmd_start __meminitdata;
 
+static void * __meminit vmemmap_va_to_kaddr(unsigned long vmemmap_va)
+{
+	void *kaddr = (void *)vmemmap_va;
+	pgd_t *pgd = __va(read_cr3_pa());
+
+	if (init_mm.pgd != pgd)
+		kaddr = __va(slow_virt_to_phys(kaddr));
+
+	return kaddr;
+}
+
 static void __meminit vmemmap_flush_unused_pmd(void)
 {
 	if (!unused_pmd_start)
@@ -851,7 +862,7 @@ static void __meminit vmemmap_flush_unused_pmd(void)
 	/*
 	 * Clears (unused_pmd_start, PMD_END]
 	 */
-	memset((void *)unused_pmd_start, PAGE_UNUSED,
+	memset(vmemmap_va_to_kaddr(unused_pmd_start), PAGE_UNUSED,
 	       ALIGN(unused_pmd_start, PMD_SIZE) - unused_pmd_start);
 	unused_pmd_start = 0;
 }
@@ -882,7 +893,7 @@ static void __meminit __vmemmap_use_sub_pmd(unsigned long start)
 	 * case the first memmap never gets initialized e.g., because the memory
 	 * block never gets onlined).
 	 */
-	memset((void *)start, 0, sizeof(struct page));
+	memset(vmemmap_va_to_kaddr(start), 0, sizeof(struct page));
 }
 
 static void __meminit vmemmap_use_sub_pmd(unsigned long start, unsigned long end)
@@ -924,7 +935,7 @@ static void __meminit vmemmap_use_new_sub_pmd(unsigned long start, unsigned long
 	 * Mark with PAGE_UNUSED the unused parts of the new memmap range
 	 */
 	if (!IS_ALIGNED(start, PMD_SIZE))
-		memset((void *)page, PAGE_UNUSED, start - page);
+		memset(vmemmap_va_to_kaddr(page), PAGE_UNUSED, start - page);
 
 	/*
 	 * We want to avoid memset(PAGE_UNUSED) when populating the vmemmap of
@@ -1348,14 +1359,15 @@ failed:
 	panic("Failed to pre-allocate %s pages for vmalloc area\n", lvl);
 }
 
-void __init mem_init(void)
+void __init arch_mm_preinit(void)
 {
 	pci_iommu_alloc();
+}
 
+void __init mem_init(void)
+{
 	/* clear_bss() already clear the empty_zero_page */
 
-	/* this will put all memory onto the freelists */
-	memblock_free_all();
 	after_bootmem = 1;
 	x86_init.hyper.init_after_bootmem();
 
@@ -1599,11 +1611,14 @@ void register_page_bootmem_memmap(unsigned long section_nr,
 		}
 		get_page_bootmem(section_nr, pud_page(*pud), MIX_SECTION_INFO);
 
-		if (!boot_cpu_has(X86_FEATURE_PSE)) {
+		pmd = pmd_offset(pud, addr);
+		if (pmd_none(*pmd)) {
 			next = (addr + PAGE_SIZE) & PAGE_MASK;
-			pmd = pmd_offset(pud, addr);
-			if (pmd_none(*pmd))
-				continue;
+			continue;
+		}
+
+		if (!boot_cpu_has(X86_FEATURE_PSE) || !pmd_leaf(*pmd)) {
+			next = (addr + PAGE_SIZE) & PAGE_MASK;
 			get_page_bootmem(section_nr, pmd_page(*pmd),
 					 MIX_SECTION_INFO);
 
@@ -1614,12 +1629,7 @@ void register_page_bootmem_memmap(unsigned long section_nr,
 					 SECTION_INFO);
 		} else {
 			next = pmd_addr_end(addr, end);
-
-			pmd = pmd_offset(pud, addr);
-			if (pmd_none(*pmd))
-				continue;
-
-			nr_pmd_pages = 1 << get_order(PMD_SIZE);
+			nr_pmd_pages = (next - addr) >> PAGE_SHIFT;
 			page = pmd_page(*pmd);
 			while (nr_pmd_pages--)
 				get_page_bootmem(section_nr, page++,
