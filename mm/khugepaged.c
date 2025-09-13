@@ -59,6 +59,7 @@ enum scan_result {
 	SCAN_STORE_FAILED,
 	SCAN_COPY_MC,
 	SCAN_PAGE_FILLED,
+	SCAN_PTE_GUARD,
 };
 
 #define CREATE_TRACE_POINTS
@@ -1306,23 +1307,34 @@ static int hpage_collapse_scan_pmd(struct mm_struct *mm,
 		pte_t pteval = ptep_get(_pte);
 		if (is_swap_pte(pteval)) {
 			++unmapped;
-			if (!cc->is_khugepaged ||
-			    unmapped <= khugepaged_max_ptes_swap) {
-				/*
-				 * Always be strict with uffd-wp
-				 * enabled swap entries.  Please see
-				 * comment below for pte_uffd_wp().
-				 */
-				if (pte_swp_uffd_wp_any(pteval)) {
-					result = SCAN_PTE_UFFD_WP;
+			if (cc->is_khugepaged) {
+				if (unmapped > khugepaged_max_ptes_swap) {
+					result = SCAN_EXCEED_SWAP_PTE;
+					count_vm_event(THP_SCAN_EXCEED_SWAP_PTE);
 					goto out_unmap;
 				}
-				continue;
-			} else {
-				result = SCAN_EXCEED_SWAP_PTE;
-				count_vm_event(THP_SCAN_EXCEED_SWAP_PTE);
+
+				/*
+				 * Guard PTE markers are installed by
+				 * MADV_GUARD_INSTALL. Khugepaged must not touch
+				 * them, so abort the scan immediately if one is
+				 * found.
+				 */
+				if (is_guard_pte_marker(pteval)) {
+					result = SCAN_PTE_GUARD;
+					goto out_unmap;
+				}
+			}
+
+			/*
+			 * Always be strict with uffd-wp enabled swap entries.
+			 * Please see comment below for pte_uffd_wp().
+			 */
+			if (pte_swp_uffd_wp_any(pteval)) {
+				result = SCAN_PTE_UFFD_WP;
 				goto out_unmap;
 			}
+			continue;
 		}
 		if (pte_none(pteval) || is_zero_pfn(pte_pfn(pteval))) {
 			++none_or_zero;
@@ -2863,6 +2875,7 @@ handle_result:
 		case SCAN_PAGE_COMPOUND:
 		case SCAN_PAGE_LRU:
 		case SCAN_DEL_PAGE_LRU:
+		case SCAN_PTE_GUARD:
 			last_fail = result;
 			break;
 		default:
