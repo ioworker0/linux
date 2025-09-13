@@ -345,6 +345,17 @@ struct attribute_group khugepaged_attr_group = {
 };
 #endif /* CONFIG_SYSFS */
 
+/**
+ * khugepaged_should_scan_vma - check if a VMA is a candidate for collapse
+ * @vm_flags: The flags of the VMA to check.
+ *
+ * Returns: true if the VMA should be scanned by khugepaged, false otherwise.
+ */
+static inline bool khugepaged_should_scan_vma(vm_flags_t vm_flags)
+{
+	return !(vm_flags & VM_NO_KHUGEPAGED);
+}
+
 int hugepage_madvise(struct vm_area_struct *vma,
 		     vm_flags_t *vm_flags, int advice)
 {
@@ -2442,6 +2453,10 @@ static unsigned int khugepaged_scan_mm_slot(unsigned int pages, int *result,
 		if (unlikely(hpage_collapse_test_exit_or_disable(mm))) {
 			progress++;
 			break;
+		}
+		if (!khugepaged_should_scan_vma(vma->vm_flags)) {
+			progress++;
+			continue;
 		}
 		if (!thp_vma_allowable_order(vma, vma->vm_flags, TVA_KHUGEPAGED, PMD_ORDER)) {
 skip:
