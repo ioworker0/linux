@@ -73,6 +73,8 @@ int memcmp_pages(struct page *page1, struct page *page2)
 {
 	char *addr1, *addr2;
 	int ret;
+	bool page1_tagged = page_mte_tagged(page1) && !is_zero_page(page1);
+	bool page2_tagged = page_mte_tagged(page2) && !is_zero_page(page2);
 
 	addr1 = page_address(page1);
 	addr2 = page_address(page2);
@@ -87,7 +89,7 @@ int memcmp_pages(struct page *page1, struct page *page2)
 	 * pages is tagged, __set_ptes() may zero or change the tags of the
 	 * other page via mte_sync_tags().
 	 */
-	if (page_mte_tagged(page1) || page_mte_tagged(page2))
+	if (page1_tagged || page2_tagged)
 		return addr1 != addr2;
 
 	return ret;
