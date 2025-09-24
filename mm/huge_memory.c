@@ -4106,8 +4106,8 @@ static bool thp_underused(struct folio *folio)
 	int num_zero_pages = 0, num_filled_pages = 0;
 	int i;
 
-	if (khugepaged_max_ptes_none == HPAGE_PMD_NR - 1)
-		return false;
+	// if (khugepaged_max_ptes_none == HPAGE_PMD_NR - 1)
+	// 	return false;
 
 	for (i = 0; i < folio_nr_pages(folio); i++) {
 		if (pages_identical(folio_page(folio, i), ZERO_PAGE(0))) {
