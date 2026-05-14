@@ -331,7 +331,9 @@ static bool evaluate_bpf_kernel(const struct ipe_eval_ctx *const ctx)
 	return false;
 }
 #endif /* CONFIG_IPE_PROP_BPF_SIGNATURE */
+
 /**
+ * evaluate_property() - Analyze @ctx against a rule property.
  * @ctx: Supplies a pointer to the context to be evaluated.
  * @p: Supplies a pointer to the property to be evaluated.
  *
