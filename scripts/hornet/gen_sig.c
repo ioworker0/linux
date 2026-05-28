@@ -200,8 +200,6 @@ static int sha256(const char *path, unsigned char out[SHA256_LEN], unsigned int 
 		return -2;
 	}
 
-	ERR_load_crypto_strings();
-
 	rc = -3;
 	ctx = EVP_MD_CTX_new();
 	if (!ctx) {
@@ -247,7 +245,6 @@ static int sha256(const char *path, unsigned char out[SHA256_LEN], unsigned int 
 done:
 	EVP_MD_CTX_free(ctx);
 	fclose(f);
-	ERR_free_strings();
 	return rc;
 }
 
