@@ -23,5 +23,5 @@ if [ $ARGC -ne $EXPECTED_ARGS ] ; then
     usage
 else
     printf $(gcc -E $1 | grep "opts_data" | \
-		 awk -F"=" '{print $2}' | sed 's/;\+$//' | sed 's/\"//g')
+		 awk -F"=" '{print $2}' | sed 's/[[:space:];]*$//' | sed 's/\"//g')
 fi
