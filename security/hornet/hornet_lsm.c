@@ -191,7 +191,6 @@ static int hornet_check_prog_maps(struct bpf_prog *prog)
 	struct bpf_map *map;
 	int i, j;
 	bool found;
-	int covered_count = 0;
 
 	security = hornet_bpf_prog_security(prog);
 
@@ -200,18 +199,18 @@ static int hornet_check_prog_maps(struct bpf_prog *prog)
 
 	mutex_lock(&prog->aux->used_maps_mutex);
 
-	/* Verify every used_map has a matching signed hash */
-	for (j = 0; j < prog->aux->used_map_cnt; j++) {
-		map = prog->aux->used_maps[j];
-
-		if (!READ_ONCE(map->frozen) || !map->ops->map_get_hash)
-			continue;
-
-		if (map->ops->map_get_hash(map, SHA256_DIGEST_SIZE, hash))
-			continue;
-
+	/* Verify every signed map exists in used_maps */
+	for (i = 0; i < security->signed_hash_count; i++) {
 		found = false;
-		for (i = 0; i < security->signed_hash_count; i++) {
+		for (j = 0; j < prog->aux->used_map_cnt; j++) {
+			map = prog->aux->used_maps[j];
+
+			if (!READ_ONCE(map->frozen) || !map->ops->map_get_hash)
+				continue;
+
+			if (map->ops->map_get_hash(map, SHA256_DIGEST_SIZE, hash))
+				continue;
+
 			if (memcmp(hash,
 				   &security->signed_hashes[i * SHA256_DIGEST_SIZE],
 				   SHA256_DIGEST_SIZE) == 0) {
@@ -223,14 +222,9 @@ static int hornet_check_prog_maps(struct bpf_prog *prog)
 			mutex_unlock(&prog->aux->used_maps_mutex);
 			return -EPERM;
 		}
-		covered_count++;
 	}
 
 	mutex_unlock(&prog->aux->used_maps_mutex);
-
-	/* Ensure all signed hashes were accounted for */
-	if (covered_count != security->signed_hash_count)
-		return -EPERM;
 
 	return 0;
 }
