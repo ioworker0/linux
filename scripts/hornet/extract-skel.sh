@@ -21,7 +21,26 @@ EXPECTED_ARGS=2
 
 if [ $ARGC -ne $EXPECTED_ARGS ] ; then
     usage
-else
-    printf $(gcc -E $1 | grep "static const char opts_$2" | \
-		 awk -F"=" '{print $2}' | sed 's/[[:space:];]*$//' | sed 's/\"//g')
 fi
+
+# See extract-insn.sh for the rationale behind the sed/printf '%b' shape.
+HEADER="$1"
+FIELD="$2"
+
+# Reject anything that could escape into the sed pattern below.
+case "$FIELD" in
+    *[!A-Za-z0-9_]*|"")
+        echo "$(basename "$0"): invalid field name '$FIELD'" >&2
+        exit 1
+        ;;
+esac
+
+STR=$(gcc -E "$HEADER" | \
+      sed -n "s/.*char opts_${FIELD}[[:space:]]*\[\][^=]*=[[:space:]]*\"\(.*\)\"[[:space:]]*;.*/\1/p")
+
+if [ -z "$STR" ]; then
+    echo "$(basename "$0"): no opts_${FIELD}[] declaration found in $HEADER" >&2
+    exit 1
+fi
+
+printf '%b' "$STR"

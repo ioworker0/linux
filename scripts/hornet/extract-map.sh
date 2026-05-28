@@ -21,7 +21,16 @@ EXPECTED_ARGS=1
 
 if [ $ARGC -ne $EXPECTED_ARGS ] ; then
     usage
-else
-    printf $(gcc -E $1 | grep "opts_data" | \
-		 awk -F"=" '{print $2}' | sed 's/[[:space:];]*$//' | sed 's/\"//g')
 fi
+
+# See extract-insn.sh for the rationale behind the sed/printf '%b' shape.
+HEADER="$1"
+STR=$(gcc -E "$HEADER" | \
+      sed -n 's/.*char opts_data[[:space:]]*\[\][^=]*=[[:space:]]*"\(.*\)"[[:space:]]*;.*/\1/p')
+
+if [ -z "$STR" ]; then
+    echo "$(basename "$0"): no opts_data[] declaration found in $HEADER" >&2
+    exit 1
+fi
+
+printf '%b' "$STR"
