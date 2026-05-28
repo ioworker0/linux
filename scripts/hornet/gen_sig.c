@@ -295,7 +295,7 @@ int main(int argc, char **argv)
 	int i;
 	int opt;
 
-	const char *short_opts = "C:K:P:O:A:Sh";
+	const char *short_opts = "C:K:P:O:D:A:Sh";
 
 	static const struct option long_opts[] = {
 		{"cert", required_argument, 0, 'C'},
@@ -332,6 +332,9 @@ int main(int argc, char **argv)
 			}
 			hashes[hash_count++].file = optarg;
 			break;
+		case 'h':
+			usage(argv[0]);
+			return EXIT_SUCCESS;
 		default:
 			usage(argv[0]);
 			return EXIT_FAILURE;
