@@ -49,8 +49,7 @@ int hornet_next_map(void *context, size_t hdrlen,
 {
 	struct hornet_parse_context *ctx = (struct hornet_parse_context *)context;
 
-	if (++ctx->security->signed_hash_count >= MAX_USED_MAPS)
-		return -EINVAL;
+	ctx->security->signed_hash_count++;
 	return 0;
 }
 
@@ -62,6 +61,8 @@ int hornet_map_hash(void *context, size_t hdrlen,
 	struct hornet_parse_context *ctx = (struct hornet_parse_context *)context;
 
 	if (vlen != SHA256_DIGEST_SIZE && vlen != 0)
+		return -EINVAL;
+	if (ctx->security->signed_hash_count >= MAX_USED_MAPS)
 		return -EINVAL;
 
 	memcpy(&ctx->security->signed_hashes[ctx->security->signed_hash_count * SHA256_DIGEST_SIZE],
