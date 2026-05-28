@@ -317,11 +317,11 @@ int main(int argc, char **argv)
 			data_path = optarg;
 			break;
 		case 'A':
-			hashes[hash_count].file = optarg;
-			if (++hash_count >= MAX_HASHES) {
+			if (hash_count >= MAX_HASHES) {
 				usage(argv[0]);
 				return EXIT_FAILURE;
 			}
+			hashes[hash_count++].file = optarg;
 			break;
 		default:
 			usage(argv[0]);
