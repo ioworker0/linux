@@ -248,13 +248,25 @@ done:
 	return rc;
 }
 
-static void add_hash(MAP_SET *set, unsigned char *buffer, int buffer_len)
+static int add_hash(MAP_SET *set, unsigned char *buffer, int buffer_len)
 {
-	HORNET_MAP *map = NULL;
+	HORNET_MAP *map;
 
 	map = HORNET_MAP_new();
-	ASN1_OCTET_STRING_set(map->hash, buffer, buffer_len);
-	sk_HORNET_MAP_push(set->maps, map);
+	if (!map)
+		return -1;
+
+	if (ASN1_OCTET_STRING_set(map->hash, buffer, buffer_len) != 1) {
+		HORNET_MAP_free(map);
+		return -1;
+	}
+
+	if (sk_HORNET_MAP_push(set->maps, map) <= 0) {
+		HORNET_MAP_free(map);
+		return -1;
+	}
+
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -353,13 +365,18 @@ int main(int argc, char **argv)
 	ERR(!si, "add signer failed");
 
 	set = MAP_SET_new();
+	ERR(!set, "alloc MAP_SET failed");
 	set->maps = sk_HORNET_MAP_new_null();
+	ERR(!set->maps, "alloc HORNET_MAP stack failed");
 
 	for (i = 0; i < hash_count; i++) {
 		if (sha256(hashes[i].file, hash_buffer, &hash_len) != 0) {
 			DIE("failed to hash input");
 		}
-		add_hash(set, hash_buffer, hash_len);
+		if (add_hash(set, hash_buffer, hash_len) != 0) {
+			ERR_print_errors_fp(stderr);
+			DIE("failed to add hash to map set");
+		}
 	}
 
 	oid = OBJ_txt2obj("2.25.316487325684022475439036912669789383960", 1);
@@ -380,7 +397,18 @@ int main(int argc, char **argv)
 	b_out = bio_open_wr(out_path);
 	ERR(!b_out, "opening output path failed");
 
-	i2d_CMS_bio_stream(b_out, cms_out, NULL, 0);
+	err = i2d_CMS_bio_stream(b_out, cms_out, NULL, 0);
+	ERR(!err, "writing CMS signature to %s failed", out_path);
+
+	/*
+	 * File BIOs wrap stdio, which buffers writes; small payloads will
+	 * report success from BIO_write even when the underlying file is
+	 * full or otherwise un-writable. Force a flush and check it before
+	 * the BIO is freed, otherwise gen_sig could exit successfully with
+	 * a truncated or empty signature file (e.g. ENOSPC on /dev/full).
+	 */
+	err = BIO_flush(b_out);
+	ERR(err <= 0, "flushing %s failed", out_path);
 
 	BIO_free(data_in);
 	BIO_free(b_out);
