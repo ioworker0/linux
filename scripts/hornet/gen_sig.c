@@ -55,7 +55,6 @@
 
 struct hash_spec {
 	char *file;
-	int index;
 };
 
 typedef struct {
@@ -66,7 +65,6 @@ typedef struct {
 
 DECLARE_ASN1_FUNCTIONS(HORNET_MAP)
 ASN1_SEQUENCE(HORNET_MAP) = {
-	ASN1_SIMPLE(HORNET_MAP, index, ASN1_INTEGER),
 	ASN1_SIMPLE(HORNET_MAP, hash, ASN1_OCTET_STRING)
 } ASN1_SEQUENCE_END(HORNET_MAP);
 
@@ -253,12 +251,11 @@ done:
 	return rc;
 }
 
-static void add_hash(MAP_SET *set, unsigned char *buffer, int buffer_len, int index)
+static void add_hash(MAP_SET *set, unsigned char *buffer, int buffer_len)
 {
 	HORNET_MAP *map = NULL;
 
 	map = HORNET_MAP_new();
-	ASN1_INTEGER_set(map->index, index);
 	ASN1_OCTET_STRING_set(map->hash, buffer, buffer_len);
 	sk_HORNET_MAP_push(set->maps, map);
 }
@@ -320,14 +317,8 @@ int main(int argc, char **argv)
 			data_path = optarg;
 			break;
 		case 'A':
-			if (strchr(optarg, ':')) {
-				hashes[hash_count].file = strsep(&optarg, ":");
-				hashes[hash_count].index = atoi(optarg);
-				if (++hash_count >= MAX_HASHES) {
-					usage(argv[0]);
-					return EXIT_FAILURE;
-				}
-			} else {
+			hashes[hash_count].file = optarg;
+			if (++hash_count >= MAX_HASHES) {
 				usage(argv[0]);
 				return EXIT_FAILURE;
 			}
@@ -371,7 +362,7 @@ int main(int argc, char **argv)
 		if (sha256(hashes[i].file, hash_buffer, &hash_len) != 0) {
 			DIE("failed to hash input");
 		}
-		add_hash(set, hash_buffer, hash_len, hashes[i].index);
+		add_hash(set, hash_buffer, hash_len);
 	}
 
 	oid = OBJ_txt2obj("2.25.316487325684022475439036912669789383960", 1);

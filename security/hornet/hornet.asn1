@@ -7,6 +7,5 @@
 HornetData ::= SET OF Map
 
 Map ::= SEQUENCE {
-	index			INTEGER ({ hornet_map_index }),
 	sha			OCTET STRING ({ hornet_map_hash })
 } ({ hornet_next_map })

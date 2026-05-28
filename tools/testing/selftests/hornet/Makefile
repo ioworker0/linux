@@ -51,7 +51,7 @@ $(OUTPUT)/gen_sig: ../../../../scripts/hornet/gen_sig.c
 
 sig.bin: insn.bin map.bin $(OUTPUT)/gen_sig
 	$(OUTPUT)/gen_sig --key $(CERTDIR)/signing_key.pem --cert $(CERTDIR)/signing_key.x509 \
-		--data insn.bin --add map.bin:0 --out sig.bin
+		--data insn.bin --add map.bin --out sig.bin
 
 signed_loader.h: sig.bin
 	$(SCRIPTSDIR)/write-sig.sh loader.h sig.bin > $@

@@ -86,15 +86,14 @@ Hornet protects against the following threats:
 
 - **Tampering with map data**: When map hashes are included in the
   signature, Hornet verifies that frozen BPF maps match their expected
-  SHA-256 hashes at load time. Maps are also re-verified before program
-  execution via ``BPF_PROG_RUN``.
+  SHA-256 hashes at load time after the program is publically exposed.
 
 Hornet does **not** protect against:
 
 - Compromise of the signing key itself.
 - Attacks that occur after a program has been loaded and verified.
 - Programs loaded by the kernel itself (kernel-internal loads bypass
-  the ``BPF_PROG_RUN`` map check).
+  the map check).
 
 Known Limitations
 =================
@@ -116,6 +115,10 @@ Known Limitations
 - Hornet guarantees that the signed program runs only with signed map
   data. It does not guarantee positional binding of maps to specific
   fd_array slots.
+
+- Map hash verification does not enforce any ordering. It simply asserts
+  that the set of map hashes requested to be verified exist in the used
+  array.
 
 - BPF_MAP_TYPE_PROG_ARRAY maps must be frozen for Hornet to verify
   them. Unfrozen prog array maps are not covered by verification.
@@ -159,24 +162,19 @@ The following describes what happens when a userspace program calls
 5. Hornet extracts the authenticated attribute identified by
    ``OID_hornet_data`` (OID ``2.25.316487325684022475439036912669789383960``)
    from the PKCS#7 message. This attribute contains an ASN.1-encoded set
-   of map index/hash pairs.
+   of map hash hashes
 
-6. For each map hash entry, Hornet retrieves the corresponding BPF map
-   via its file descriptor, confirms it is frozen, computes its SHA-256
-   hash, and compares it against the signed hash.
+6. For each map hash entry, Hornet retrieves stores the target map hash in
+   the program's LSM blob.
 
 7. The resulting integrity verdict is passed to the
    ``bpf_prog_load_post_integrity`` hook so that downstream LSMs can
    enforce policy.
 
-Runtime Map Verification
-------------------------
-
-When ``bpf(BPF_PROG_RUN, ...)`` is called from userspace, Hornet
-re-verifies the hashes of all maps associated with the program. This
-ensures that map contents have not been modified between program load
-and execution. If any map hash no longer matches, the ``BPF_PROG_RUN``
-command is denied.
+8. After the verifier processes the program, once it's ready to be published,
+   Hornet intercepts the ``bpf_prog`` hook, and verifies that the set of
+   required hashes exist in the programs used maps. If the map hashes are
+   unable to be found, the command is denied.
 
 Userspace Interface
 -------------------
@@ -199,14 +197,10 @@ the following ASN.1 schema::
   HornetData ::= SET OF Map
 
   Map ::= SEQUENCE {
-      index   INTEGER,
       sha     OCTET STRING
   }
 
-Each ``Map`` entry contains the index of the map in the program's
-``fd_array`` and its expected SHA-256 hash. A zero-length ``sha`` field
-indicates that the map at that index should be skipped during
-verification.
+Each ``Map`` entry contains an expected SHA-256 hash.
 
 Tooling
 =======
@@ -229,7 +223,7 @@ Usage::
           --key <signer.key> \
           [--pass <passphrase>] \
           --out <signature.p7b> \
-          [--add <mapfile.bin>:<index> ...]
+          [--add <mapfile.bin> ...]
 
 ``--data``
   Path to the binary file containing eBPF program instructions to sign.
@@ -248,8 +242,7 @@ Usage::
 
 ``--add``
   Attach a map hash as a signed attribute. The argument is a path to a
-  binary map file followed by a colon and the map's index in the
-  ``fd_array``. This option may be specified multiple times.
+  binary map file. This option may be specified multiple times.
 
 extract-skel.sh
 ---------------
