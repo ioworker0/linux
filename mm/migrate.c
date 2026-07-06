@@ -2409,7 +2409,8 @@ again:
 
 			anon_exclusive = PageAnon(page) && PageAnonExclusive(page);
 			if (anon_exclusive) {
-				flush_cache_page(vma, addr, pte_pfn(*ptep));
+				if (pte_present(pte))
+					flush_cache_page(vma, addr, pte_pfn(pte));
 				ptep_clear_flush(vma, addr, ptep);
 
 				if (page_try_share_anon_rmap(page)) {
