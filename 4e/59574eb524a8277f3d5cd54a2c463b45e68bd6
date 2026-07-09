@@ -1,0 +1,14 @@
+mm/huge_memory.c
+  h_8fdf25bca87d29 2785
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4e59574eb524a8277f3d5cd54a2c463b45e68bd6",
+  "prompts": {},
+  "humans": {
+    "h_8fdf25bca87d29": {
+      "author": "Lance Yang <lance.yang@linux.dev>"
+    }
+  }
+}
