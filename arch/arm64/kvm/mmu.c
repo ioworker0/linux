@@ -1475,7 +1475,6 @@ static int get_vma_page_shift(struct vm_area_struct *vma)
 
 	return PAGE_SHIFT;
 }
-
 /*
  * The page will be mapped in stage 2 as Normal Cacheable, so the VM will be
  * able to see the page's tags and therefore they must be initialised first. If
